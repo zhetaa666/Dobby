@@ -29,17 +29,35 @@ jobs:
 
       - name: Verify NDK
         run: |
-          echo $ANDROID_NDK_ROOT
+          echo "NDK path: $ANDROID_NDK_ROOT"
           ls $ANDROID_NDK_ROOT
 
       - name: Patch platform_builder.py
         run: |
-          # Fix 1: API level 19 tidak didukung NDK r26d, minimum adalah 21
-          sed -i 's/SYSTEM_VERSION=19/SYSTEM_VERSION=21/g' scripts/platform_builder.py
-          # Fix 2: Tambahkan -GNinja agar CMake menggunakan ninja sebagai build tool
-          sed -i 's/-DCMAKE_BUILD_TYPE=Release/-DCMAKE_BUILD_TYPE=Release -GNinja/g' scripts/platform_builder.py
-          # Verifikasi patch berhasil
-          grep -n "SYSTEM_VERSION\|GNinja" scripts/platform_builder.py
+          python3 - << 'EOF'
+          import re
+
+          with open("scripts/platform_builder.py", "r") as f:
+              content = f.read()
+
+          # Fix 1: Replace hardcoded API level 19 → 21 (NDK r26d requires min API 21)
+          content = re.sub(r'(SYSTEM_VERSION[=\s"\']+)19\b', r'\g<1>21', content)
+
+          # Fix 2: Add -GNinja and CMAKE_MAKE_PROGRAM to cmake configure command
+          # The script builds a cmake command string — inject Ninja generator
+          content = content.replace(
+              '"-DCMAKE_BUILD_TYPE=Release"',
+              '"-DCMAKE_BUILD_TYPE=Release", "-GNinja", f"-DCMAKE_MAKE_PROGRAM={__import__(\'shutil\').which(\'ninja\')}"'
+          )
+
+          with open("scripts/platform_builder.py", "w") as f:
+              f.write(content)
+
+          print("=== Patch verification ===")
+          for i, line in enumerate(content.splitlines(), 1):
+              if "SYSTEM_VERSION" in line or "GNinja" in line or "MAKE_PROGRAM" in line:
+                  print(f"  Line {i}: {line.strip()}")
+          EOF
 
       - name: Build Dobby
         run: |
