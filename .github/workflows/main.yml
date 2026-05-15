@@ -24,7 +24,7 @@ jobs:
       - name: Download Android NDK
         run: |
           wget https://dl.google.com/android/repository/android-ndk-r26d-linux.zip
-          unzip android-ndk-r26d-linux.zip
+          unzip -q android-ndk-r26d-linux.zip
           echo "ANDROID_NDK_ROOT=$PWD/android-ndk-r26d" >> $GITHUB_ENV
 
       - name: Verify NDK
@@ -49,33 +49,32 @@ jobs:
       - name: Patch closure_bridge_arm64.asm - Fix PAGE/PAGEOFF for Android ELF
         run: |
           python3 - << 'EOF'
+          import os
           ASM_FILE = "source/TrampolineBridge/ClosureTrampolineBridge/arm64/closure_bridge_arm64.asm"
+          
+          if not os.path.exists(ASM_FILE):
+              raise FileNotFoundError(f"File {ASM_FILE} tidak ditemukan!")
 
           with open(ASM_FILE, "r") as f:
               content = f.read()
 
-          # Ganti 2 baris Mach-O syntax:
-          #   adrp TMP_REG_0, cdecl(common_closure_bridge_handler)@PAGE
-          #   add  TMP_REG_0, TMP_REG_0, cdecl(common_closure_bridge_handler)@PAGEOFF
-          # Dengan ELF syntax yang benar:
-          #   adrp TMP_REG_0, :pg_hi21:common_closure_bridge_handler
-          #   add  TMP_REG_0, TMP_REG_0, :lo12:common_closure_bridge_handler
+          # Ganti 2 baris Mach-O syntax dengan ELF syntax yang kompatibel dengan Clang
           content = content.replace(
               "adrp TMP_REG_0, cdecl(common_closure_bridge_handler)@PAGE\n"
               "add TMP_REG_0, TMP_REG_0, cdecl(common_closure_bridge_handler)@PAGEOFF",
-              "adrp TMP_REG_0, :pg_hi21:common_closure_bridge_handler\n"
+              "adrp TMP_REG_0, common_closure_bridge_handler\n"
               "add TMP_REG_0, TMP_REG_0, :lo12:common_closure_bridge_handler"
           )
 
           with open(ASM_FILE, "w") as f:
               f.write(content)
 
-          # Verifikasi
+          # Verifikasi Patch
           with open(ASM_FILE, "r") as f:
               lines = f.readlines()
           print("=== Patch verification ===")
           for i, line in enumerate(lines, 1):
-              if "pg_hi21" in line or "lo12" in line or "PAGE" in line:
+              if "lo12" in line or "PAGE" in line or "common_closure_bridge_handler" in line:
                   print(f"  {i}: {line.rstrip()}")
 
           # Pastikan tidak ada @PAGE yang tersisa
@@ -83,7 +82,7 @@ jobs:
           if remaining:
               raise Exception(f"Patch GAGAL, masih ada @PAGE: {remaining}")
           else:
-              print("Patch SUCCESS - tidak ada @PAGE yang tersisa")
+              print("Patch SUCCESS - tidak ada sintaks @PAGE yang tersisa")
           EOF
 
       - name: Build arm64-v8a
