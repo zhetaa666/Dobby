@@ -1,4 +1,4 @@
-name: Build Dobby Android by claude
+name: Build Dobby Android
 
 on:
   workflow_dispatch:
@@ -37,7 +37,7 @@ jobs:
           python3 scripts/platform_builder.py \
             --platform=android \
             --arch=all \
-            --ndk-dir=$ANDROID_NDK_ROOT
+            --android_ndk_dir=$ANDROID_NDK_ROOT
 
       - name: Upload Artifact
         uses: actions/upload-artifact@v4
