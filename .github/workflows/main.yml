@@ -38,7 +38,6 @@ jobs:
           with open("scripts/platform_builder.py", "r") as f:
               content = f.read()
 
-          # Satu-satunya fix yang perlu: tambah -GNinja supaya CMake tidak pakai Unix Makefiles
           content = content.replace(
               'f"-DCMAKE_SYSTEM_VERSION={android_api_level}"\n    ]',
               'f"-DCMAKE_SYSTEM_VERSION={android_api_level}",\n      "-GNinja"\n    ]'
@@ -47,13 +46,21 @@ jobs:
           with open("scripts/platform_builder.py", "w") as f:
               f.write(content)
 
-          with open("scripts/platform_builder.py", "r") as f:
-              lines = f.readlines()
-          print("=== Patch verification ===")
-          for i, line in enumerate(lines, 1):
-              if "GNinja" in line:
-                  print(f"  Line {i}: {line.rstrip()}")
+          print("=== platform_builder.py patch OK ===")
           EOF
+
+      - name: Patch closure_bridge_arm64.asm - Fix macOS syntax for Android/ELF
+        run: |
+          ASM_FILE="source/TrampolineBridge/ClosureTrampolineBridge/arm64/closure_bridge_arm64.asm"
+          echo "=== Before patch ==="
+          grep -n "PAGE\|PAGEOFF\|adrp\|add x17" "$ASM_FILE" || true
+
+          # Ganti @PAGE/@PAGEOFF (Mach-O/macOS) → :pg_hi21:/:lo12: (ELF/Android)
+          sed -i 's/adrp \(x[0-9]*\), \(.*\)@PAGE/adrp \1, :pg_hi21:\2/g' "$ASM_FILE"
+          sed -i 's/add \(x[0-9]*\), \(x[0-9]*\), \(.*\)@PAGEOFF/add \1, \2, :lo12:\3/g' "$ASM_FILE"
+
+          echo "=== After patch ==="
+          grep -n "pg_hi21\|lo12\|adrp\|add x17" "$ASM_FILE" || true
 
       - name: Build arm64-v8a
         run: |
