@@ -19,7 +19,7 @@ jobs:
       - name: Install Dependencies
         run: |
           sudo apt update
-          sudo apt install -y cmake ninja-build unzip wget
+          sudo apt install -y cmake ninja-build make unzip wget
 
       - name: Download Android NDK
         run: |
@@ -31,6 +31,15 @@ jobs:
         run: |
           echo $ANDROID_NDK_ROOT
           ls $ANDROID_NDK_ROOT
+
+      - name: Patch platform_builder.py
+        run: |
+          # Fix 1: API level 19 tidak didukung NDK r26d, minimum adalah 21
+          sed -i 's/SYSTEM_VERSION=19/SYSTEM_VERSION=21/g' scripts/platform_builder.py
+          # Fix 2: Tambahkan -GNinja agar CMake menggunakan ninja sebagai build tool
+          sed -i 's/-DCMAKE_BUILD_TYPE=Release/-DCMAKE_BUILD_TYPE=Release -GNinja/g' scripts/platform_builder.py
+          # Verifikasi patch berhasil
+          grep -n "SYSTEM_VERSION\|GNinja" scripts/platform_builder.py
 
       - name: Build Dobby
         run: |
