@@ -19,7 +19,7 @@ jobs:
       - name: Install Dependencies
         run: |
           sudo apt update
-          sudo apt install -y cmake ninja-build make unzip wget
+          sudo apt install -y cmake ninja-build unzip wget
 
       - name: Download Android NDK
         run: |
@@ -32,21 +32,13 @@ jobs:
           echo "NDK path: $ANDROID_NDK_ROOT"
           ls $ANDROID_NDK_ROOT
 
-      - name: Patch platform_builder.py
+      - name: Patch platform_builder.py - Add Ninja generator
         run: |
           python3 - << 'EOF'
           with open("scripts/platform_builder.py", "r") as f:
               content = f.read()
 
-          # Fix 1: API level 19 tidak didukung NDK r26d (min API 21)
-          # Baris asli: android_api_level = 19
-          content = content.replace(
-              "android_api_level = 19",
-              "android_api_level = 21"
-          )
-
-          # Fix 2: Tambahkan -GNinja ke cmake_args agar CMake pakai ninja bukan make
-          # Inject setelah baris -DCMAKE_SYSTEM_VERSION di AndroidPlatformBuilder
+          # Satu-satunya fix yang perlu: tambah -GNinja supaya CMake tidak pakai Unix Makefiles
           content = content.replace(
               'f"-DCMAKE_SYSTEM_VERSION={android_api_level}"\n    ]',
               'f"-DCMAKE_SYSTEM_VERSION={android_api_level}",\n      "-GNinja"\n    ]'
@@ -55,24 +47,32 @@ jobs:
           with open("scripts/platform_builder.py", "w") as f:
               f.write(content)
 
-          # Verifikasi
           with open("scripts/platform_builder.py", "r") as f:
               lines = f.readlines()
           print("=== Patch verification ===")
           for i, line in enumerate(lines, 1):
-              if "android_api_level" in line or "GNinja" in line:
+              if "GNinja" in line:
                   print(f"  Line {i}: {line.rstrip()}")
           EOF
 
-      - name: Build Dobby
+      - name: Build arm64-v8a
         run: |
           python3 scripts/platform_builder.py \
             --platform=android \
-            --arch=all \
+            --arch=arm64-v8a \
+            --android_ndk_dir=$ANDROID_NDK_ROOT
+
+      - name: Build x86_64
+        run: |
+          python3 scripts/platform_builder.py \
+            --platform=android \
+            --arch=x86_64 \
             --android_ndk_dir=$ANDROID_NDK_ROOT
 
       - name: Upload Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: dobby-android
-          path: build/
+          name: dobby-android-64bit
+          path: |
+            build/android/arm64-v8a/
+            build/android/x86_64/
