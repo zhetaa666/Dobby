@@ -37,30 +37,54 @@ jobs:
           python3 - << 'EOF'
           with open("scripts/platform_builder.py", "r") as f:
               content = f.read()
-
           content = content.replace(
               'f"-DCMAKE_SYSTEM_VERSION={android_api_level}"\n    ]',
               'f"-DCMAKE_SYSTEM_VERSION={android_api_level}",\n      "-GNinja"\n    ]'
           )
-
           with open("scripts/platform_builder.py", "w") as f:
               f.write(content)
-
-          print("=== platform_builder.py patch OK ===")
+          print("platform_builder.py patch OK")
           EOF
 
-      - name: Patch closure_bridge_arm64.asm - Fix macOS syntax for Android/ELF
+      - name: Patch closure_bridge_arm64.asm - Fix PAGE/PAGEOFF for Android ELF
         run: |
-          ASM_FILE="source/TrampolineBridge/ClosureTrampolineBridge/arm64/closure_bridge_arm64.asm"
-          echo "=== Before patch ==="
-          grep -n "PAGE\|PAGEOFF\|adrp\|add x17" "$ASM_FILE" || true
+          python3 - << 'EOF'
+          ASM_FILE = "source/TrampolineBridge/ClosureTrampolineBridge/arm64/closure_bridge_arm64.asm"
 
-          # Ganti @PAGE/@PAGEOFF (Mach-O/macOS) → :pg_hi21:/:lo12: (ELF/Android)
-          sed -i 's/adrp \(x[0-9]*\), \(.*\)@PAGE/adrp \1, :pg_hi21:\2/g' "$ASM_FILE"
-          sed -i 's/add \(x[0-9]*\), \(x[0-9]*\), \(.*\)@PAGEOFF/add \1, \2, :lo12:\3/g' "$ASM_FILE"
+          with open(ASM_FILE, "r") as f:
+              content = f.read()
 
-          echo "=== After patch ==="
-          grep -n "pg_hi21\|lo12\|adrp\|add x17" "$ASM_FILE" || true
+          # Ganti 2 baris Mach-O syntax:
+          #   adrp TMP_REG_0, cdecl(common_closure_bridge_handler)@PAGE
+          #   add  TMP_REG_0, TMP_REG_0, cdecl(common_closure_bridge_handler)@PAGEOFF
+          # Dengan ELF syntax yang benar:
+          #   adrp TMP_REG_0, :pg_hi21:common_closure_bridge_handler
+          #   add  TMP_REG_0, TMP_REG_0, :lo12:common_closure_bridge_handler
+          content = content.replace(
+              "adrp TMP_REG_0, cdecl(common_closure_bridge_handler)@PAGE\n"
+              "add TMP_REG_0, TMP_REG_0, cdecl(common_closure_bridge_handler)@PAGEOFF",
+              "adrp TMP_REG_0, :pg_hi21:common_closure_bridge_handler\n"
+              "add TMP_REG_0, TMP_REG_0, :lo12:common_closure_bridge_handler"
+          )
+
+          with open(ASM_FILE, "w") as f:
+              f.write(content)
+
+          # Verifikasi
+          with open(ASM_FILE, "r") as f:
+              lines = f.readlines()
+          print("=== Patch verification ===")
+          for i, line in enumerate(lines, 1):
+              if "pg_hi21" in line or "lo12" in line or "PAGE" in line:
+                  print(f"  {i}: {line.rstrip()}")
+
+          # Pastikan tidak ada @PAGE yang tersisa
+          remaining = [l for l in lines if "@PAGE" in l]
+          if remaining:
+              raise Exception(f"Patch GAGAL, masih ada @PAGE: {remaining}")
+          else:
+              print("Patch SUCCESS - tidak ada @PAGE yang tersisa")
+          EOF
 
       - name: Build arm64-v8a
         run: |
